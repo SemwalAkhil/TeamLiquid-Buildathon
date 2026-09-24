@@ -18,7 +18,7 @@ For the built-in demo, enter any valid phone number and use OTP **123456**. This
 ## Features
 
 - Phone-number-derived, configurable email identity (`EMAIL_DOMAIN`).
-- OTP registration/login with expiry and attempt limits; password hash column is ready for fallback authentication.
+- OTP verification before token issuance, with expiry and attempt limits; password hash column is ready for fallback authentication.
 - Conversation-centric responsive interface: WhatsApp-inspired at small widths and Gmail-inspired at desktop widths.
 - Compose messages with To, CC, BCC, subject, body, and replies.
 - Fastify API, PostgreSQL schema, local Mailpit SMTP container, and Twilio-compatible SMS/voice webhooks.

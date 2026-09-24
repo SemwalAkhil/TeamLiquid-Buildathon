@@ -3,7 +3,7 @@
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/health` | Service health |
-| POST | `/api/auth/register` | Create/update phone identity |
+| POST | `/api/auth/register` | Begin registration; returns no token—OTP verification is required |
 | POST | `/api/auth/request-otp` | Create OTP challenge |
 | POST | `/api/auth/verify-otp` | Verify challenge and receive JWT |
 | GET | `/api/users/me` | Read signed-in identity |
