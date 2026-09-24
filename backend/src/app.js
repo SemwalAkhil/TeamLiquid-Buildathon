@@ -1,0 +1,65 @@
+import Fastify from 'fastify';
+import cors from '@fastify/cors';
+import jwt from '@fastify/jwt';
+import pg from 'pg';
+import crypto from 'node:crypto';
+
+const app = Fastify({ logger: true });
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+const domain = process.env.EMAIL_DOMAIN || 'phonemail.local';
+const otpStore = new Map();
+await app.register(cors, { origin: true });
+await app.register(jwt, { secret: process.env.JWT_SECRET || 'development-secret' });
+
+const emailFor = phone => `${phone.replace(/\D/g, '')}@${domain}`;
+const tokenFor = user => app.jwt.sign({ id: user.id, phone: user.phone_number, email: user.email_address }, { expiresIn: '8h' });
+const auth = async request => { await request.jwtVerify(); };
+
+app.get('/health', async () => ({ status: 'ok', service: 'phonemail-api' }));
+app.post('/api/auth/register', async (request, reply) => {
+  const { phone, name = '', language = 'en', password } = request.body || {};
+  const normalized = String(phone || '').replace(/\D/g, '');
+  if (!/^\d{10,15}$/.test(normalized)) return reply.code(400).send({ message: 'Enter a valid phone number.' });
+  const address = emailFor(normalized);
+  const passwordHash = password ? crypto.createHash('sha256').update(password).digest('hex') : null;
+  const result = await pool.query(`INSERT INTO users (phone_number,email_address,name,language,password_hash) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (phone_number) DO UPDATE SET name=EXCLUDED.name RETURNING *`, [normalized, address, name, language, passwordHash]);
+  const user = result.rows[0];
+  return { user: { phone: user.phone_number, email: user.email_address, name: user.name }, token: tokenFor(user) };
+});
+app.post('/api/auth/request-otp', async (request, reply) => {
+  const phone = String(request.body?.phone || '').replace(/\D/g, '');
+  if (!/^\d{10,15}$/.test(phone)) return reply.code(400).send({ message: 'Enter a valid phone number.' });
+  const otp = process.env.NODE_ENV === 'production' ? String(Math.floor(100000 + Math.random() * 900000)) : '123456';
+  otpStore.set(phone, { hash: crypto.createHash('sha256').update(otp).digest('hex'), expires: Date.now() + 5 * 60_000, attempts: 0 });
+  return { message: 'OTP sent. Use 123456 in local demo mode.', demoOtp: process.env.NODE_ENV === 'production' ? undefined : otp };
+});
+app.post('/api/auth/verify-otp', async (request, reply) => {
+  const phone = String(request.body?.phone || '').replace(/\D/g, ''); const otp = String(request.body?.otp || ''); const session = otpStore.get(phone);
+  if (!session || session.expires < Date.now() || session.attempts >= 5) return reply.code(400).send({ message: 'OTP expired. Request a new code.' });
+  session.attempts++;
+  if (session.hash !== crypto.createHash('sha256').update(otp).digest('hex')) return reply.code(400).send({ message: 'That code is not correct.' });
+  let result = await pool.query('SELECT * FROM users WHERE phone_number=$1', [phone]);
+  if (!result.rows[0]) result = await pool.query('INSERT INTO users (phone_number,email_address) VALUES ($1,$2) RETURNING *', [phone, emailFor(phone)]);
+  otpStore.delete(phone); const user = result.rows[0];
+  return { user: { phone: user.phone_number, email: user.email_address, name: user.name }, token: tokenFor(user) };
+});
+app.get('/api/users/me', { preHandler: auth }, async request => ({ phone: request.user.phone, email: request.user.email }));
+app.get('/api/emails', { preHandler: auth }, async request => {
+  const result = await pool.query(`SELECT e.*, COALESCE(json_agg(json_build_object('recipient',r.recipient,'type',r.type)) FILTER (WHERE r.id IS NOT NULL),'[]') recipients FROM emails e LEFT JOIN email_recipients r ON r.email_id=e.id WHERE e.sender=$1 OR EXISTS (SELECT 1 FROM email_recipients x WHERE x.email_id=e.id AND x.recipient=$1) GROUP BY e.id ORDER BY e.created_at DESC`, [request.user.email]);
+  return result.rows;
+});
+app.post('/api/emails', { preHandler: auth }, async (request, reply) => {
+  const { to = [], cc = [], bcc = [], subject, body, replyTo } = request.body || {};
+  const recipients = [...to, ...cc, ...bcc].map(x => String(x).trim()).filter(Boolean);
+  if (!recipients.length || !subject?.trim() || !body?.trim()) return reply.code(400).send({ message: 'To, subject, and message are required.' });
+  const threadKey = replyTo || [...[request.user.email, recipients[0]]].sort().join('|'); const messageId = `<${crypto.randomUUID()}@${domain}>`;
+  const saved = await pool.query('INSERT INTO emails (message_id,sender,subject,body,folder,thread_key) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *', [messageId, request.user.email, subject.trim(), body.trim(), 'sent', threadKey]);
+  const types = [[to,'TO'],[cc,'CC'],[bcc,'BCC']];
+  for (const [list, type] of types) for (const recipient of list) if (String(recipient).trim()) await pool.query('INSERT INTO email_recipients (email_id,recipient,type) VALUES ($1,$2,$3)', [saved.rows[0].id, String(recipient).trim(), type]);
+  return reply.code(201).send(saved.rows[0]);
+});
+app.patch('/api/emails/:id/read', { preHandler: auth }, async request => { await pool.query('UPDATE emails SET is_read=true WHERE id=$1', [request.params.id]); return { ok: true }; });
+app.post('/api/twilio/sms', async request => { const phone = String(request.body?.From || '').replace(/\D/g, ''); if (phone) await pool.query('INSERT INTO users (phone_number,email_address) VALUES ($1,$2) ON CONFLICT DO NOTHING', [phone, emailFor(phone)]); return '<Response><Message>Your PhoneMail account is ready.</Message></Response>'; });
+app.post('/api/twilio/voice', async () => '<Response><Gather numDigits="1"><Say>Welcome to PhoneMail. Press 1 to create your phone email account.</Say></Gather></Response>');
+
+app.listen({ port: Number(process.env.PORT || 3000), host: '0.0.0.0' });
