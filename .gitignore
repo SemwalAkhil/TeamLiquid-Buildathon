@@ -24,6 +24,7 @@ temp/
 
 # Database / local data
 *.sql
+!backend/migrations/*.sql
 *.dump
 *.db
 
