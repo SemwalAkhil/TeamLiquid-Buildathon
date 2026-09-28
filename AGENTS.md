@@ -162,3 +162,61 @@ Before implementing any major feature:
 7. Report the result.
 
 Do not silently make major architectural decisions.
+
+# Git Workflow
+
+## Repository Rules
+
+- Use Git for all implementation changes.
+- Never commit secrets, credentials, `.env` files, API keys, certificates,
+  private keys, database dumps, generated build artifacts, node_modules,
+  coverage output, or temporary files.
+- Maintain a root `.gitignore`.
+- Before every checkpoint, run:
+  - `git status`
+  - `git diff`
+- Never blindly commit unrelated changes.
+- Keep commits focused on one completed SDLC phase.
+- Use conventional commit messages.
+
+## Phase Checkpoint
+
+When the user explicitly requests a phase checkpoint:
+
+1. Verify the current implementation/tests are complete.
+2. Run `git status`.
+3. Review the diff.
+4. Update `.gitignore` if a newly introduced generated/local file should
+   not be committed.
+5. Stage only files belonging to the completed phase.
+6. Create a commit using:
+   `<type>: <completed phase>`
+7. Push the commit to the configured GitHub remote.
+8. Report:
+   - commit hash
+   - commit message
+   - files included
+   - test/build result
+   - push result
+   - remaining uncommitted changes
+
+## Commit Rules
+
+Examples:
+
+- `docs: complete system design`
+- `feat: implement repository scaffolding`
+- `feat: implement phone OTP authentication`
+- `feat: implement SMTP mail pipeline`
+- `feat: implement mobile conversation client`
+- `feat: implement web client and drafts`
+- `feat: implement telephony integration`
+- `test: complete integration and security hardening`
+
+## Important
+
+- Do not push if tests for the completed phase fail.
+- Do not push if secrets are detected.
+- Do not use `git reset --hard`, `git clean -fd`, force-push,
+  or destructive history rewriting unless the user explicitly requests it.
+- Do not commit files merely because they are modified; inspect the diff first.

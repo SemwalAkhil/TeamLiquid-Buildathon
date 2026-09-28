@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Vite
+.vite/
+
+# Runtime / temporary data
+tmp/
+temp/
+
+# Database / local data
+*.sql
+*.dump
+*.db
+
+# Uploaded/generated attachments
+data/attachments/
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+playwright-report/
+test-results/
+
+# Docker local overrides
+docker-compose.override.yml
